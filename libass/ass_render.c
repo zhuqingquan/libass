@@ -46,6 +46,8 @@
 #define MAX_PERSP_SCALE 16.0
 #define SUBPIXEL_ORDER 3  // ~ log2(64 / POSITION_PRECISION)
 #define BLUR_PRECISION (1.0 / 256)  // blur error as fraction of full input range
+#define CJK_START 0x3000
+#define CJK_END 0xFF9F
 
 
 static bool text_info_init(TextInfo* text_info)
@@ -1730,6 +1732,7 @@ wrap_lines_naive(RenderContext *state, double max_text_width, char *unibrks)
     GlyphInfo *s1  = text_info->glyphs; // current line start
     int last_breakable = -1;
     int break_type = 0;
+    int last_cjk = -1;
 
     text_info->n_lines = 1;
     for (int i = 0; i < text_info->length; ++i) {
@@ -1737,6 +1740,10 @@ wrap_lines_naive(RenderContext *state, double max_text_width, char *unibrks)
         int break_at = -1;
         double s_offset = d6_to_double(s1->bbox.x_min + s1->pos.x);
         double len = d6_to_double(cur->bbox.x_max + cur->pos.x) - s_offset;
+
+        if( cur->symbol >= CJK_START && cur->symbol <= CJK_END ) {
+            last_cjk = i;
+        }
 
         if (FORCEBREAK(cur->symbol, i)) {
             break_type = 2;
@@ -1747,7 +1754,12 @@ wrap_lines_naive(RenderContext *state, double max_text_width, char *unibrks)
                    cur->symbol != ' ' /* get trimmed */ &&
                    (state->wrap_style != 2)) {
             break_type = 1;
-            break_at = last_breakable;
+            if(last_breakable != -1) {
+                break_at = last_breakable;
+            }
+            else if( last_cjk != -1 ) {
+                break_at = last_cjk;
+            }
             if (break_at >= 0)
                 ass_msg(render_priv->library, MSGL_DBG2, "line break at %d",
                         break_at);
@@ -1777,6 +1789,7 @@ wrap_lines_naive(RenderContext *state, double max_text_width, char *unibrks)
             if (lead < text_info->length) {
                 text_info->glyphs[lead].linebreak = break_type;
                 last_breakable = -1;
+                last_cjk = -1;
                 s1 = text_info->glyphs + lead;
                 text_info->n_lines++;
             }
@@ -2873,6 +2886,7 @@ ass_render_event(RenderContext *state, ASS_Event *event,
         x2scr_right(state, render_priv->track->PlayResX - MarginR) -
         x2scr_left(state, MarginL);
 
+    ass_msg(render_priv->library, MSGL_INFO, "marginL=%d marginR=%d max_text_width=%f", MarginL, MarginR, max_text_width);
     // wrap lines
     wrap_lines_smart(state, max_text_width);
 
